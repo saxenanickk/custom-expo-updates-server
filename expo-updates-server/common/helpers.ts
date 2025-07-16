@@ -175,6 +175,13 @@ export function truthy<TValue>(value: TValue | null | undefined): value is TValu
   return !!value;
 }
 
+/**
+ * Given a updateId, return the path to the update bundle.
+ * This is used to find the metadata of a previous update.
+ *
+ * @param updateId The ID of the update to find.
+ * @returns The path to the update bundle.
+ */
 export async function getUpdateBundlePathForUpdateIdAsync(updateId: string) {
   const updatesDirectory = 'updates';
   const runtimeVersions = (await fs.readdir(updatesDirectory)).filter((filename) => {

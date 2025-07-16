@@ -15,6 +15,7 @@ import {
   createRollBackDirectiveAsync,
   NoUpdateAvailableError,
   createNoUpdateAvailableDirectiveAsync,
+  getUpdateBundlePathForUpdateIdAsync,
 } from '../../common/helpers';
 
 export default async function manifestEndpoint(req: NextApiRequest, res: NextApiResponse) {
@@ -111,7 +112,7 @@ async function putUpdateInResponseAsync(
   platform: string,
   protocolVersion: number
 ): Promise<void> {
-  const currentUpdateId = req.headers['expo-current-update-id'];
+  const currentUpdateId = req.headers['expo-current-update-id'] as string | undefined;
   const { metadataJson, createdAt, id } = await getMetadataAsync({
     updateBundlePath,
     runtimeVersion,
@@ -157,6 +158,26 @@ async function putUpdateInResponseAsync(
       expoClient: expoConfig,
     },
   };
+
+  if (currentUpdateId) {
+    try {
+      const currentUpdateBundlePath = await getUpdateBundlePathForUpdateIdAsync(currentUpdateId);
+      const { metadataJson: currentMetadataJson } = await getMetadataAsync({
+        updateBundlePath: currentUpdateBundlePath,
+        runtimeVersion,
+      });
+
+      const currentAssets = currentMetadataJson.fileMetadata[platform].assets;
+      const newAssets = manifest.assets;
+
+      const currentAssetsKeys = new Set(currentAssets.map((asset: any) => asset.key));
+      const newAssetsFiltered = newAssets.filter((asset: any) => !currentAssetsKeys.has(asset.key));
+
+      manifest.assets = newAssetsFiltered;
+    } catch (error) {
+      console.warn(`Could not find update with id ${currentUpdateId}, serving full update`);
+    }
+  }
 
   let signature = null;
   const expectSignatureHeader = req.headers['expo-expect-signature'];

@@ -15,6 +15,7 @@ import {
   createRollBackDirectiveAsync,
   NoUpdateAvailableError,
   createNoUpdateAvailableDirectiveAsync,
+  getUpdateBundlePathForUpdateIdAsync,
 } from '../../common/helpers';
 
 export default async function manifestEndpoint(req: NextApiRequest, res: NextApiResponse) {
@@ -111,7 +112,7 @@ async function putUpdateInResponseAsync(
   platform: string,
   protocolVersion: number
 ): Promise<void> {
-  const currentUpdateId = req.headers['expo-current-update-id'];
+  const currentUpdateId = req.headers['expo-current-update-id'] as string | undefined;
   const { metadataJson, createdAt, id } = await getMetadataAsync({
     updateBundlePath,
     runtimeVersion,
@@ -157,6 +158,33 @@ async function putUpdateInResponseAsync(
       expoClient: expoConfig,
     },
   };
+
+  // If the client has a current update, we want to only serve the assets that have changed.
+  if (currentUpdateId) {
+    try {
+      // Find the path to the current update bundle.
+      const currentUpdateBundlePath = await getUpdateBundlePathForUpdateIdAsync(currentUpdateId);
+      // Get the metadata for the current update.
+      const { metadataJson: currentMetadataJson } = await getMetadataAsync({
+        updateBundlePath: currentUpdateBundlePath,
+        runtimeVersion,
+      });
+
+      // Get the assets for the current and new updates.
+      const currentAssets = currentMetadataJson.fileMetadata[platform].assets;
+      const newAssets = manifest.assets;
+
+      // Filter out the assets that are the same in both updates.
+      const currentAssetsKeys = new Set(currentAssets.map((asset: any) => asset.key));
+      const newAssetsFiltered = newAssets.filter((asset: any) => !currentAssetsKeys.has(asset.key));
+
+      // Set the assets in the manifest to the filtered list.
+      manifest.assets = newAssetsFiltered;
+    } catch (error) {
+      // If we can't find the current update, we'll just serve the full update.
+      console.warn(`Could not find update with id ${currentUpdateId}, serving full update`);
+    }
+  }
 
   let signature = null;
   const expectSignatureHeader = req.headers['expo-expect-signature'];

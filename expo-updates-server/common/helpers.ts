@@ -174,3 +174,80 @@ export function convertSHA256HashToUUID(value: string) {
 export function truthy<TValue>(value: TValue | null | undefined): value is TValue {
   return !!value;
 }
+
+/**
+ * Given a updateId, return the path to the update bundle.
+ * This is used to find the metadata of a previous update.
+ *
+ * @param updateId The ID of the update to find.
+ * @returns The path to the update bundle.
+ */
+export async function getUpdateBundlePathForUpdateIdAsync(updateId: string) {
+  const updatesDirectory = 'updates';
+  const runtimeVersions = (await fs.readdir(updatesDirectory)).filter((filename) => {
+    const stat = fsSync.statSync(path.join(updatesDirectory, filename));
+    return stat.isDirectory();
+  });
+
+  for (const runtimeVersion of runtimeVersions) {
+    const updateGroups = (await fs.readdir(path.join(updatesDirectory, runtimeVersion))).filter(
+      (filename) => {
+        const stat = fsSync.statSync(path.join(updatesDirectory, runtimeVersion, filename));
+        return stat.isDirectory();
+      }
+    );
+
+    for (const updateGroup of updateGroups) {
+      const metadataPath = path.join(updatesDirectory, runtimeVersion, updateGroup, 'metadata.json');
+      if (fsSync.existsSync(metadataPath)) {
+        const metadataBuffer = await fs.readFile(metadataPath);
+        const hash = createHash(metadataBuffer, 'sha256', 'hex');
+        if (hash === updateId) {
+          return path.join(updatesDirectory, runtimeVersion, updateGroup);
+        }
+      }
+    }
+  }
+
+  throw new Error(`No update found with id: ${updateId}`);
+}
+
+export async function getUpdateGroupAsync(updateGroupId: string) {
+  const updatesDirectory = 'updates';
+  const runtimeVersions = (await fs.readdir(updatesDirectory)).filter((filename) => {
+    const stat = fsSync.statSync(path.join(updatesDirectory, filename));
+    return stat.isDirectory();
+  });
+
+  for (const runtimeVersion of runtimeVersions) {
+    const updateGroups = (await fs.readdir(path.join(updatesDirectory, runtimeVersion))).filter(
+      (filename) => {
+        const stat = fsSync.statSync(path.join(updatesDirectory, runtimeVersion, filename));
+        return stat.isDirectory();
+      }
+    );
+
+    if (updateGroups.includes(updateGroupId)) {
+      return (
+        await fs.readdir(path.join(updatesDirectory, runtimeVersion, updateGroupId))
+      ).filter((filename) => {
+        const stat = fsSync.statSync(
+          path.join(updatesDirectory, runtimeVersion, updateGroupId, filename)
+        );
+        return stat.isDirectory();
+      });
+    }
+  }
+
+  throw new Error(`No update group found with id: ${updateGroupId}`);
+}
+
+export async function findUpdateBranch(updateGroups: string[], branch: string) {
+  for (const updateGroup of updateGroups) {
+    const branchPath = path.join('updates', updateGroup, branch);
+    if (fsSync.existsSync(branchPath)) {
+      return branchPath;
+    }
+  }
+  return null;
+}
